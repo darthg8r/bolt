@@ -161,7 +161,7 @@ contract BoltMaster is Ownable, ReentrancyGuard, IBoltMaster {
         updatePool();
         PoolInfo storage pool = poolInfo;
         UserInfo storage user = userInfo[msg.sender];
-        uint256 total = IStrategy(pool.strat).pendingEarnedToken();
+        uint256 total = IStrategy(pool.strat).DepositedLockedTotal();
         require(user.amount > 0, "user.amount is 0");
         require(total > 0, "Total is 0");
         // // Withdraw pending yield
