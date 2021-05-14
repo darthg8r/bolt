@@ -1,0 +1,267 @@
+pragma solidity 0.7.3;
+
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
+import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/math/SafeMath.sol";
+import "./IPancakeswapFarm.sol";
+import "./IPancakeRouter02.sol";
+import "./ISmartChef.sol";
+import "./IStrategy.sol";
+import "./IBoltMaster.sol";
+
+contract CakeBTDStrategy is Ownable, ReentrancyGuard, Pausable, IStrategy {
+    // Maximises yields in pancakeswap
+
+    using SafeMath for uint256;
+    using SafeERC20 for IERC20;
+
+    address public farmContractAddress; // address of farm, eg, PCS, Thugs etc.
+    uint256 public farmContractPoolId;
+
+    address public uniRouterAddress; // uniswap, pancakeswap etc
+
+    address public BoltMasterAddress;
+    address public govAddress; // timelock contract
+    bool public onlyGov = false;
+
+    uint256 public depositedLockedTotal = 0;
+
+
+    address[] public earnedToYieldPath;
+
+    address public earnedTokenAddress; // Address of token from syrup pool.
+    address public yieldTokenAddress; // Address of token to buy and return
+    address public depositTokenAddress;
+    address public busdTokenAddress;
+
+    address public treasuryAddress;
+    address public devAddress;
+    uint256 public devFees;
+    uint256 public treasuryFees;
+    uint256 public devFeesMax = 10000;
+    uint256 public treasuryFeesMax = 10000;
+
+
+    constructor(
+        address _BoltMasterAddress,
+        address _farmContractAddress, // Pancake Farm address
+        uint256 _farmContractPoolId,
+        address _depositTokenAddress, // token we're using to farm
+        address _earnedTokenAddress,  // token that we get back from farm.
+        address _yieldTokenAddress,   // token that we sell earned to.
+        address _busdTokenAddress,
+        address _uniRouterAddress,
+        address _treasuryAddress,
+        address _devAddress
+    ) public {
+        govAddress = msg.sender;
+        BoltMasterAddress = _BoltMasterAddress;
+        depositTokenAddress = _depositTokenAddress;
+        yieldTokenAddress = _yieldTokenAddress;
+        earnedTokenAddress = _earnedTokenAddress;
+        farmContractAddress = _farmContractAddress;
+        farmContractPoolId = _farmContractPoolId;
+        busdTokenAddress = _busdTokenAddress;
+        uniRouterAddress = _uniRouterAddress;
+        devAddress = _devAddress;
+        treasuryAddress = _treasuryAddress;
+
+        devFees = 0;
+        treasuryFees = 0;
+
+        earnedToYieldPath = [
+            earnedTokenAddress,
+            busdTokenAddress,
+            yieldTokenAddress
+        ];
+
+        // Off for testing
+        // transferOwnership(BoltMasterAddress);
+    }
+
+    function DepositedLockedTotal() external override view returns (uint256)
+    {
+        return depositedLockedTotal;
+    }
+
+    // Receives new deposits from user
+    function deposit(uint256 _depositAmt)
+        public
+        // onlyowner this is comment out for testing.
+        whenNotPaused
+        override
+        returns (uint256)
+    {
+        IERC20(depositTokenAddress).safeTransferFrom(
+            address(msg.sender),
+            address(this),
+            _depositAmt
+        );
+
+        _farm(_depositAmt);
+        _sellEarnedToYieldToken();
+
+        return _depositAmt;
+    }
+
+    function _sellEarnedToYieldToken() internal
+    {
+        // Get Balance
+        uint256 contractEarnedBalance = IERC20(earnedTokenAddress).balanceOf(address(this));
+        uint256 contractYieldBalance = IERC20(yieldTokenAddress).balanceOf(address(this));
+
+        if(contractEarnedBalance > 0)
+        {
+            IERC20(depositTokenAddress).safeIncreaseAllowance(
+            uniRouterAddress,
+            contractEarnedBalance);
+
+            IPancakeRouter02(uniRouterAddress).swapExactTokensForTokensSupportingFeeOnTransferTokens(
+                contractEarnedBalance,
+                0,
+                earnedToYieldPath,
+                address(this),
+                block.timestamp + 600
+            );
+
+            uint256 yieldBalance = IERC20(yieldTokenAddress).balanceOf(address(this));
+            uint256 yieldAfterFees = distributeFees(yieldBalance);
+            IERC20(yieldTokenAddress).safeIncreaseAllowance(BoltMasterAddress, yieldAfterFees);
+            IBoltMaster(BoltMasterAddress).AcceptYield(yieldAfterFees);
+        }
+        
+    }
+
+    function _farm(uint256 _depositAmt) internal {
+        depositedLockedTotal = depositedLockedTotal.add(_depositAmt);
+        IERC20(depositTokenAddress).safeIncreaseAllowance(
+            farmContractAddress,
+            _depositAmt
+        );
+
+        ISmartChef(farmContractAddress).deposit(_depositAmt); 
+    }
+
+    function withdraw(uint256 _depositAmt)
+        public
+        override
+        // onlyowner  Owner should be master.  Commented for testing
+        nonReentrant
+        returns (uint256)
+    {
+        require(_depositAmt > 0, "_depositAmt <= 0");
+
+        ISmartChef(farmContractAddress).withdraw(_depositAmt); 
+        
+        _sellEarnedToYieldToken();
+
+        uint256 wantAmt = IERC20(depositTokenAddress).balanceOf(address(this));
+        if (_depositAmt > wantAmt) {
+            _depositAmt = wantAmt;
+        }
+
+        if (depositedLockedTotal < _depositAmt) {
+            _depositAmt = depositedLockedTotal;
+        }
+
+
+        depositedLockedTotal = depositedLockedTotal.sub(_depositAmt);
+
+        IERC20(depositTokenAddress).safeTransfer(BoltMasterAddress, _depositAmt);
+
+        return _depositAmt;
+    }
+
+    ///
+
+    function distributeFees(uint256 _earnedAmt) 
+        internal 
+        returns (uint256)
+    {
+        uint256 devFee = _earnedAmt.mul(devFees).div(devFeesMax);
+        uint256 treasuryFee = _earnedAmt.mul(treasuryFees).div(treasuryFeesMax);
+
+        if(devFee > 0)
+        {
+            IERC20(yieldTokenAddress).transfer(devAddress, devFee);    
+        }
+
+        if(treasuryFee > 0)
+        {
+            IERC20(yieldTokenAddress).transfer(treasuryAddress, treasuryFee);    
+        }
+
+        return _earnedAmt.sub(devFee).sub(treasuryFee);        
+    }
+
+    function setDevFees(uint256 _devFees)     
+        external
+    {
+        require(msg.sender == govAddress, "!gov");
+
+        devFees = _devFees;
+    }
+
+    function setTreasuryFees(uint256 _treasuryFees)     
+        external
+    {
+        require(msg.sender == govAddress, "!gov");
+
+        treasuryFees = _treasuryFees;
+    }
+
+
+
+
+    function setDevAddress(address _devAddress)     
+        external
+    {
+        require(msg.sender == govAddress, "!gov");
+
+        devAddress = _devAddress;
+    }
+
+    function setTreasuryAddress(address _treasuryAddress)     
+        external
+    {
+        require(msg.sender == govAddress, "!gov");
+
+        treasuryAddress = _treasuryAddress;
+    }
+
+    function pause() public
+     {
+        require(msg.sender == govAddress, "Not authorised");
+        _pause();
+    }
+
+    function unpause() external {
+        require(msg.sender == govAddress, "Not authorised");
+        _unpause();
+    }
+
+    function setGov(address _govAddress) public         
+    {
+        require(msg.sender == govAddress, "!gov");
+        govAddress = _govAddress;
+    }
+
+    function setOnlyGov(bool _onlyGov) public {
+        require(msg.sender == govAddress, "!gov");
+        onlyGov = _onlyGov;
+    }
+
+    function inCaseTokensGetStuck(
+        address _token,
+        uint256 _amount,
+        address _to
+    ) public override{
+        require(msg.sender == govAddress, "!gov");
+        require(_token != earnedTokenAddress, "!safe");
+        require(_token != depositTokenAddress, "!safe");
+        IERC20(_token).safeTransfer(_to, _amount);
+    }
+}
