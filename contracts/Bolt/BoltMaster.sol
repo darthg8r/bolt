@@ -140,16 +140,14 @@ contract BoltMaster is Ownable, ReentrancyGuard, IBoltMaster {
                 address(this),
                 _wantAmt
             );
-            uint256 amount = _wantAmt;
-
-
-
-            // Send deposit to strategy.
-            IERC20(poolInfo.want).safeIncreaseAllowance(poolInfo.strat, amount);
-            uint256 amountDeposit = IStrategy(poolInfo.strat).deposit(amount);
-
+            
             // Track user deposit
             user.amount = user.amount.add(amountDeposit);
+
+            // Send deposit to strategy.
+            IERC20(poolInfo.want).safeIncreaseAllowance(poolInfo.strat, _wantAmt);
+            uint256 amountDeposit = IStrategy(poolInfo.strat).deposit(_wantAmt);
+
         }
 
         user.rewardDebt = user.amount.mul(poolInfo.accumulatedYieldPerShare).div(1e12);
