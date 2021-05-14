@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 pragma solidity 0.7.3;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -29,17 +30,13 @@ contract BoltMaster is Ownable, ReentrancyGuard, IBoltMaster {
 
     // Cake Address
     address public depositToken;
-
-    // Syrup Pool Token Address
-    address public earnedToken;
-
     // Dev address.
     address public devaddr;
 
     // Yield that came from strategy, yet to run through updatepool
     uint256 private unDistributedYield;
 
-    address public burnAddress = 0x0000000000000000000000000000000000000000;
+    address private burnAddress = 0x0000000000000000000000000000000000000000;
 
     PoolInfo public poolInfo;
     mapping(address => UserInfo) public userInfo; // Info of each user that stakes LP tokens.
@@ -86,7 +83,10 @@ contract BoltMaster is Ownable, ReentrancyGuard, IBoltMaster {
     address private LastDepositor;
     uint256 private LastDepositAmount;
 
-    function setPool(address newStrat) public {
+    function setPool(address newStrat) 
+        public
+        onlyOwner   
+     {
         poolInfo.strat = newStrat;
     }
 
@@ -103,7 +103,7 @@ contract BoltMaster is Ownable, ReentrancyGuard, IBoltMaster {
     // Update reward variables of the given pool to be up-to-date.
     // Because yield from external pools isn't deterministic, we have to update users after the next deposit/witdraw.
     // Pay attention at test time, this could be exploitable
-    function updatePool() public {
+    function updatePool() private {
         uint256 shares = IStrategy(poolInfo.strat).DepositedLockedTotal();
 
         if (shares > 0) {
