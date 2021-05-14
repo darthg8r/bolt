@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 pragma solidity 0.7.3;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
@@ -19,7 +20,6 @@ contract CakeBTDStrategy is Ownable, ReentrancyGuard, Pausable, IStrategy {
     using SafeERC20 for IERC20;
 
     address public farmContractAddress; // address of farm, eg, PCS, Thugs etc.
-    uint256 public farmContractPoolId;
 
     address public uniRouterAddress; // uniswap, pancakeswap etc
 
@@ -41,14 +41,13 @@ contract CakeBTDStrategy is Ownable, ReentrancyGuard, Pausable, IStrategy {
     address public devAddress;
     uint256 public devFees;
     uint256 public treasuryFees;
-    uint256 public devFeesMax = 10000;
-    uint256 public treasuryFeesMax = 10000;
+    uint256 private devFeesMax = 10000;
+    uint256 private treasuryFeesMax = 10000;
 
 
     constructor(
         address _BoltMasterAddress,
         address _farmContractAddress, // Pancake Farm address
-        uint256 _farmContractPoolId,
         address _depositTokenAddress, // token we're using to farm
         address _earnedTokenAddress,  // token that we get back from farm.
         address _yieldTokenAddress,   // token that we sell earned to.
@@ -63,7 +62,6 @@ contract CakeBTDStrategy is Ownable, ReentrancyGuard, Pausable, IStrategy {
         yieldTokenAddress = _yieldTokenAddress;
         earnedTokenAddress = _earnedTokenAddress;
         farmContractAddress = _farmContractAddress;
-        farmContractPoolId = _farmContractPoolId;
         busdTokenAddress = _busdTokenAddress;
         uniRouterAddress = _uniRouterAddress;
         devAddress = _devAddress;
