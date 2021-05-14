@@ -41,11 +41,10 @@ contract BoltMaster is Ownable, ReentrancyGuard, IBoltMaster {
     PoolInfo public poolInfo;
     mapping(address => UserInfo) public userInfo; // Info of each user that stakes LP tokens.
 
-    event Deposit(address indexed user, uint256 indexed pid, uint256 amount);
-    event Withdraw(address indexed user, uint256 indexed pid, uint256 amount);
+    event Deposit(address indexed user, uint256 amount);
+    event Withdraw(address indexed user, uint256 amount);
     event EmergencyWithdraw(
         address indexed user,
-        uint256 indexed pid,
         uint256 amount
     );
 
@@ -121,7 +120,7 @@ contract BoltMaster is Ownable, ReentrancyGuard, IBoltMaster {
         }
     }
 
-    function deposit(uint256 _pid, uint256 _wantAmt) public nonReentrant {
+    function deposit(uint256 _wantAmt) public nonReentrant {
         updatePool();
         UserInfo storage user = userInfo[msg.sender];
 
@@ -140,7 +139,7 @@ contract BoltMaster is Ownable, ReentrancyGuard, IBoltMaster {
                 address(this),
                 _wantAmt
             );
-            
+
             // Track user deposit
             user.amount = user.amount.add(amountDeposit);
 
@@ -151,7 +150,7 @@ contract BoltMaster is Ownable, ReentrancyGuard, IBoltMaster {
         }
 
         user.rewardDebt = user.amount.mul(poolInfo.accumulatedYieldPerShare).div(1e12);
-        emit Deposit(msg.sender, _pid, _wantAmt);
+        emit Deposit(msg.sender, _wantAmt);
     }
 
     // Withdraw LP tokens from BoltMaster.
@@ -190,7 +189,7 @@ contract BoltMaster is Ownable, ReentrancyGuard, IBoltMaster {
             IERC20(pool.want).safeTransfer(address(msg.sender), _wantAmt);
         }
         user.rewardDebt = user.amount.mul(pool.accumulatedYieldPerShare).div(1e12);
-        emit Withdraw(msg.sender, _pid, _wantAmt);
+        emit Withdraw(msg.sender, _wantAmt);
     }
 
     // Safe transfer function, just in case if rounding error causes pool to not have enough
@@ -204,7 +203,7 @@ contract BoltMaster is Ownable, ReentrancyGuard, IBoltMaster {
     }
 
     // Withdraw without caring about rewards. EMERGENCY ONLY.
-    function emergencyWithdraw(uint256 _pid) public nonReentrant {
+    function emergencyWithdraw() public nonReentrant {
         PoolInfo storage pool = poolInfo;
         UserInfo storage user = userInfo[msg.sender];
 
@@ -215,7 +214,7 @@ contract BoltMaster is Ownable, ReentrancyGuard, IBoltMaster {
         user.amount = 0;
         user.rewardDebt = 0;
         IERC20(pool.want).safeTransfer(address(msg.sender), amount);
-        emit EmergencyWithdraw(msg.sender, _pid, amount);
+        emit EmergencyWithdraw(msg.sender, amount);
     }
 
     function inCaseTokensGetStuck(address _token, uint256 _amount)
