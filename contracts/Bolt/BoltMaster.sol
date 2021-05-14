@@ -157,7 +157,7 @@ contract BoltMaster is Ownable, ReentrancyGuard, IBoltMaster {
     }
 
     // Withdraw LP tokens from BoltMaster.
-    function withdraw(uint256 _pid, uint256 _wantAmt) public nonReentrant {
+    function withdraw(uint256 _wantAmt) public nonReentrant {
         updatePool();
         PoolInfo storage pool = poolInfo;
         UserInfo storage user = userInfo[msg.sender];
